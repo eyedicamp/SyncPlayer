@@ -1,0 +1,28 @@
+import type { Metadata } from "next";
+import { Space_Grotesk, IBM_Plex_Mono } from "next/font/google";
+
+import "./globals.css";
+
+const displayFont = Space_Grotesk({
+  subsets: ["latin"],
+  variable: "--font-display"
+});
+
+const monoFont = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  variable: "--font-mono"
+});
+
+export const metadata: Metadata = {
+  title: "SyncPlayer",
+  description: "Synchronized YouTube watch sessions with video call, chat, and room controls."
+};
+
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  return (
+    <html lang="en" className={`${displayFont.variable} ${monoFont.variable}`}>
+      <body>{children}</body>
+    </html>
+  );
+}
