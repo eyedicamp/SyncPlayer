@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useEffectEvent } from "react";
 
 import type { Participant, RoomState } from "@syncplayer/shared";
 
@@ -27,6 +27,7 @@ type YouTubePlayerPanelProps = {
       shouldPlay: boolean;
       eventKey: number;
     } | null;
+    startCountdown: () => Promise<void>;
     setPlayerReady: (value: boolean) => Promise<void>;
     setVideo: (videoId: string) => Promise<void>;
     play: () => Promise<void>;
@@ -49,13 +50,31 @@ export function YouTubePlayerPanel({
   const countdownTargetMs = useUiStore((state) => state.countdownTargetMs);
   const setPlayerReady = useMediaStore((state) => state.setPlayerReady);
   const setBuffering = useMediaStore((state) => state.setBuffering);
-  const secondsLeft = useCountdown(countdownTargetMs, syncOffsetMs);
+  const everyoneReady =
+    room.playback.videoId !== null &&
+    room.participants.length > 0 &&
+    room.participants.every((participant) => participant.isReady && participant.hasPlayerReady);
+  const effectiveCountdownTargetMs =
+    room.phase === "countdown"
+      ? countdownTargetMs ?? room.playback.countdownTargetMs
+      : null;
+  const secondsLeft = useCountdown(effectiveCountdownTargetMs, syncOffsetMs);
   const isHost = me?.role === "host";
+  const isInitialPlayback =
+    room.phase !== "playing" &&
+    room.playback.startedAtMs === null &&
+    room.playback.currentTimeSec <= 0.25;
+  const primaryActionLabel = room.phase === "countdown"
+    ? "Countdown running"
+    : isInitialPlayback
+      ? "Start countdown"
+      : "Play now";
 
   const {
     containerRef,
     currentTimeSec,
     error,
+    isReady,
     phase,
     cueVideo,
     play,
@@ -73,6 +92,11 @@ export function YouTubePlayerPanel({
   });
   const playbackTimeSec =
     typeof currentTimeSec === "number" && Number.isFinite(currentTimeSec) ? currentTimeSec : 0;
+  const sendHeartbeat = useEffectEvent(() => {
+    const playerState =
+      phase === "buffering" ? "buffering" : phase === "playing" ? "playing" : "paused";
+    void socketApi.heartbeat(playbackTimeSec, playerState);
+  });
 
   useEffect(() => {
     if (!room.playback.videoId) {
@@ -83,14 +107,42 @@ export function YouTubePlayerPanel({
   }, [cueVideo, room.playback.videoId]);
 
   useEffect(() => {
-    if (!socketApi.playEvent) {
+    const playEvent = socketApi.playEvent;
+    if (!playEvent) {
       return;
     }
 
-    seekTo(socketApi.playEvent.currentTimeSec);
-    const delay = socketApi.playEvent.startedAtMs - (Date.now() + syncOffsetMs);
-    const timeout = window.setTimeout(() => play(), Math.max(0, delay));
-    return () => window.clearTimeout(timeout);
+    const delay = playEvent.startedAtMs - (Date.now() + syncOffsetMs);
+    let cancelled = false;
+    let retryTimeoutId: number | null = null;
+    let attempts = 0;
+
+    const attemptPlay = () => {
+      if (cancelled) {
+        return;
+      }
+
+      seekTo(playEvent.currentTimeSec);
+      if (play()) {
+        return;
+      }
+
+      if (attempts >= 20) {
+        return;
+      }
+
+      attempts += 1;
+      retryTimeoutId = window.setTimeout(attemptPlay, 100);
+    };
+
+    const timeout = window.setTimeout(attemptPlay, Math.max(0, delay));
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+      if (retryTimeoutId !== null) {
+        window.clearTimeout(retryTimeoutId);
+      }
+    };
   }, [play, seekTo, socketApi.playEvent, syncOffsetMs]);
 
   useEffect(() => {
@@ -124,19 +176,16 @@ export function YouTubePlayerPanel({
   }, [pause, play, seekTo, socketApi.syncCorrection]);
 
   useEffect(() => {
-    const playerState =
-      phase === "buffering" ? "buffering" : phase === "playing" ? "playing" : "paused";
-
-    if (!room.playback.videoId) {
+    if (!room.playback.videoId || !isReady) {
       return;
     }
 
     const interval = window.setInterval(() => {
-      void socketApi.heartbeat(playbackTimeSec, playerState);
+      sendHeartbeat();
     }, 1000);
 
     return () => window.clearInterval(interval);
-  }, [phase, playbackTimeSec, room.playback.videoId, socketApi]);
+  }, [isReady, room.playback.videoId]);
 
   return (
     <section className="flex h-full flex-col gap-4 px-5 py-5 lg:px-6">
@@ -180,10 +229,17 @@ export function YouTubePlayerPanel({
       <div className="flex flex-wrap gap-3">
         <Button
           variant="secondary"
-          disabled={!isHost || !room.playback.videoId}
-          onClick={() => void socketApi.play()}
+          disabled={
+            !isHost ||
+            !room.playback.videoId ||
+            room.phase === "countdown" ||
+            (isInitialPlayback && !everyoneReady)
+          }
+          onClick={() =>
+            void (isInitialPlayback ? socketApi.startCountdown() : socketApi.play())
+          }
         >
-          Play now
+          {primaryActionLabel}
         </Button>
         <Button
           variant="secondary"
