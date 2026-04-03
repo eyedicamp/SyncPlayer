@@ -9,13 +9,18 @@ export function SyncStatusBadge({
 }: {
   roomPhase: RoomState["phase"];
   playerPhase: "idle" | "paused" | "playing" | "buffering" | "error";
-  currentTimeSec: number;
+  currentTimeSec: number | null | undefined;
 }) {
+  const currentTimeLabel =
+    typeof currentTimeSec === "number" && Number.isFinite(currentTimeSec)
+      ? `${currentTimeSec.toFixed(1)}s`
+      : "--";
+
   return (
     <div className="flex flex-wrap gap-2">
       <Badge>Room {roomPhase}</Badge>
       <Badge>Player {playerPhase}</Badge>
-      <Badge>{currentTimeSec.toFixed(1)}s</Badge>
+      <Badge>{currentTimeLabel}</Badge>
     </div>
   );
 }
