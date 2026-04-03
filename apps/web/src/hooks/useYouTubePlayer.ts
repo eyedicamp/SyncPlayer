@@ -6,6 +6,10 @@ type PlayerPhase = "idle" | "paused" | "playing" | "buffering" | "error";
 
 let scriptPromise: Promise<void> | null = null;
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
 function loadYouTubeApi() {
   if (typeof window === "undefined") {
     return Promise.resolve();
@@ -49,7 +53,7 @@ export function useYouTubePlayer({
   const readyChangeRef = useRef(onReadyChange);
   const bufferingChangeRef = useRef(onBufferingChange);
   const [phase, setPhase] = useState<PlayerPhase>("idle");
-  const [currentTimeSec, setCurrentTimeSec] = useState(0);
+  const [currentTimeSec, setCurrentTimeSec] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -81,6 +85,7 @@ export function useYouTubePlayer({
           onReady: () => {
             setPhase("paused");
             setError(null);
+            setCurrentTimeSec(0);
             readyChangeRef.current(true);
           },
           onStateChange: (event) => {
@@ -105,6 +110,7 @@ export function useYouTubePlayer({
           onError: () => {
             setPhase("error");
             setError("YouTube could not load this video.");
+            setCurrentTimeSec(null);
             readyChangeRef.current(false);
           }
         }
@@ -124,7 +130,12 @@ export function useYouTubePlayer({
         return;
       }
 
-      setCurrentTimeSec(playerRef.current.getCurrentTime());
+      const nextCurrentTimeSec = playerRef.current.getCurrentTime();
+      if (!isFiniteNumber(nextCurrentTimeSec)) {
+        return;
+      }
+
+      setCurrentTimeSec(nextCurrentTimeSec);
     }, 500);
 
     return () => window.clearInterval(interval);
@@ -137,10 +148,12 @@ export function useYouTubePlayer({
     error,
     cueVideo(videoId: string) {
       readyChangeRef.current(false);
+      setCurrentTimeSec(0);
       playerRef.current?.cueVideoById(videoId);
     },
     loadVideo(videoId: string, startSeconds = 0) {
       readyChangeRef.current(false);
+      setCurrentTimeSec(startSeconds);
       playerRef.current?.loadVideoById(videoId, startSeconds);
     },
     play() {
@@ -150,7 +163,9 @@ export function useYouTubePlayer({
       playerRef.current?.pauseVideo();
     },
     seekTo(seconds: number) {
-      playerRef.current?.seekTo(Math.max(0, seconds), true);
+      const nextTimeSec = Math.max(0, seconds);
+      setCurrentTimeSec(nextTimeSec);
+      playerRef.current?.seekTo(nextTimeSec, true);
     }
   };
 }

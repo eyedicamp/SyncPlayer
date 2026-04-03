@@ -71,6 +71,8 @@ export function YouTubePlayerPanel({
       void socketApi.buffering(value);
     }
   });
+  const playbackTimeSec =
+    typeof currentTimeSec === "number" && Number.isFinite(currentTimeSec) ? currentTimeSec : 0;
 
   useEffect(() => {
     if (!room.playback.videoId) {
@@ -130,11 +132,11 @@ export function YouTubePlayerPanel({
     }
 
     const interval = window.setInterval(() => {
-      void socketApi.heartbeat(currentTimeSec, playerState);
+      void socketApi.heartbeat(playbackTimeSec, playerState);
     }, 1000);
 
     return () => window.clearInterval(interval);
-  }, [currentTimeSec, phase, room.playback.videoId, socketApi]);
+  }, [phase, playbackTimeSec, room.playback.videoId, socketApi]);
 
   return (
     <section className="flex h-full flex-col gap-4 px-5 py-5 lg:px-6">
@@ -193,14 +195,14 @@ export function YouTubePlayerPanel({
         <Button
           variant="secondary"
           disabled={!isHost || !room.playback.videoId}
-          onClick={() => void socketApi.seek(Math.max(0, currentTimeSec - 10))}
+          onClick={() => void socketApi.seek(Math.max(0, playbackTimeSec - 10))}
         >
           -10s
         </Button>
         <Button
           variant="secondary"
           disabled={!isHost || !room.playback.videoId}
-          onClick={() => void socketApi.seek(currentTimeSec + 10)}
+          onClick={() => void socketApi.seek(playbackTimeSec + 10)}
         >
           +10s
         </Button>
